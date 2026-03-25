@@ -96,15 +96,10 @@ function validateApiKey(request: Request, env: Env): Response | null {
 // Model mapping: OpenAI model name -> Cloudflare AI model name
 // Available models: https://developers.cloudflare.com/workers-ai/models/
 const MODEL_MAPPING: Record<string, string> = {
-	'gpt-4': '@cf/meta/llama-3.1-70b-instruct',
-	'gpt-4o': '@cf/meta/llama-3.1-70b-instruct',
-	'gpt-4o-mini': '@cf/meta/llama-3.1-8b-instruct',
-	'gpt-3.5-turbo': '@cf/meta/llama-3.1-8b-instruct',
-	'llama-3.1-8b': '@cf/meta/llama-3.1-8b-instruct',
-	'llama-3.1-70b': '@cf/meta/llama-3.1-70b-instruct',
+	'kimi-k2.5': '@cf/moonshotai/kimi-k2.5',
+	'glm-4.7-flash': '@cf/zai-org/glm-4.7-flash',
 	// DeepSeek models
-	'deepseek-r1': '@cf/deepseek-ai/deepseek-r1-distill-qwen-32b',
-	'deepseek-chat': '@cf/deepseek-ai/deepseek-r1-distill-qwen-32b',
+	'deepseek-r1-qwen32b': '@cf/deepseek-ai/deepseek-r1-distill-qwen-32b',
 };
 
 function getCloudflareModel(model: string): string {
