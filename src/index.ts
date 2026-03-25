@@ -96,9 +96,10 @@ function validateApiKey(request: Request, env: Env): Response | null {
 // Model mapping: OpenAI model name -> Cloudflare AI model name
 // Available models: https://developers.cloudflare.com/workers-ai/models/
 const MODEL_MAPPING: Record<string, string> = {
-	'kimi-k2.5': 'kimi-k2.5',
-	'glm-4.7-flash': 'glm-4.7-flash',
+	'kimi-k2.5': '@cf/moonshotai/kimi-k2.5',
+	'glm-4.7-flash': '@cf/zai-org/glm-4.7-flash',
 	// DeepSeek models
+	'deepseek-r1': '@cf/deepseek-ai/deepseek-r1-distill-qwen-32b',
 	'deepseek-r1-qwen32b': '@cf/deepseek-ai/deepseek-r1-distill-qwen-32b'
 };
 
@@ -631,7 +632,7 @@ function handleListModels(): Response {
 	const models = [
 		{ id: 'kimi-k2.5', object: 'model', owned_by: 'openai' },
 		{ id: 'glm-4.7-flash', object: 'model', owned_by: 'openai' },
-		{ id: 'deepseek-r1', object: 'model', owned_by: 'deepseek-ai' }
+		{ id: 'deepseek-r1-qwen32b', object: 'model', owned_by: 'deepseek-ai' }
 	];
 
 	return new Response(
