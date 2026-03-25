@@ -99,7 +99,7 @@ const MODEL_MAPPING: Record<string, string> = {
 	'kimi-k2.5': '@cf/moonshotai/kimi-k2.5',
 	'glm-4.7-flash': '@cf/zai-org/glm-4.7-flash',
 	// DeepSeek models
-	'deepseek-r1-qwen32b': '@cf/deepseek-ai/deepseek-r1-distill-qwen-32b',
+	'deepseek-r1-qwen32b': '@cf/deepseek-ai/deepseek-r1-distill-qwen-32b'
 };
 
 function getCloudflareModel(model: string): string {
@@ -629,14 +629,9 @@ async function handleResponses(
 // List available models (OpenAI compatible)
 function handleListModels(): Response {
 	const models = [
-		{ id: 'gpt-4', object: 'model', owned_by: 'openai' },
-		{ id: 'gpt-4o', object: 'model', owned_by: 'openai' },
-		{ id: 'gpt-4o-mini', object: 'model', owned_by: 'openai' },
-		{ id: 'gpt-3.5-turbo', object: 'model', owned_by: 'openai' },
-		{ id: 'llama-3.1-8b', object: 'model', owned_by: 'meta' },
-		{ id: 'llama-3.1-70b', object: 'model', owned_by: 'meta' },
-		{ id: 'deepseek-r1', object: 'model', owned_by: 'deepseek-ai' },
-		{ id: 'deepseek-chat', object: 'model', owned_by: 'deepseek-ai' },
+		{ id: 'kimi-k2.5', object: 'model', owned_by: 'openai' },
+		{ id: 'glm-4.7-flash', object: 'model', owned_by: 'openai' },
+		{ id: 'deepseek-r1', object: 'model', owned_by: 'deepseek-ai' }
 	];
 
 	return new Response(
