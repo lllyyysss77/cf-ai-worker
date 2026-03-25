@@ -103,8 +103,8 @@ const MODEL_MAPPING: Record<string, string> = {
 	'deepseek-r1-qwen32b': '@cf/deepseek-ai/deepseek-r1-distill-qwen-32b'
 };
 
-function getCloudflareModel(model: string): string {
-	return MODEL_MAPPING[model] || '@cf/meta/llama-3.1-8b-instruct';
+function getCloudflareModel(model: string): string | null {
+	return MODEL_MAPPING[model] || null;
 }
 
 const MESSAGE_NATIVE_MODELS = new Set([
@@ -216,7 +216,89 @@ function convertInputToPrompt(input: string | ResponseInputItem[]): string {
 					return content;
 			}
 		})
-		.join('\n\n');
+			.join('\n\n');
+}
+
+function convertResponsesInputToMessages(
+	input: string | ResponseInputItem[],
+	instructions?: string
+): ChatMessage[] {
+	const messages: ChatMessage[] = [];
+
+	if (instructions) {
+		messages.push({ role: 'system', content: instructions });
+	}
+
+	if (typeof input === 'string') {
+		messages.push({ role: 'user', content: input });
+		return messages;
+	}
+
+	for (const item of input) {
+		let content = '';
+
+		if (typeof item.content === 'string') {
+			content = item.content;
+		} else if (Array.isArray(item.content)) {
+			content = item.content
+				.filter((c) => c.type === 'input_text' || c.type === 'output_text')
+				.map((c) => c.text || '')
+				.join('');
+		}
+
+		messages.push({
+			role: item.role,
+			content,
+		});
+	}
+
+	return messages;
+}
+
+function createErrorResponse(message: string, status: number, type: string): Response {
+	return new Response(
+		JSON.stringify({
+			error: {
+				message,
+				type,
+			},
+		}),
+		{
+			status,
+			headers: { 'Content-Type': 'application/json' },
+		}
+	);
+}
+
+function validateModel(model: unknown): Response | null {
+	if (typeof model !== 'string' || model.trim().length === 0) {
+		return createErrorResponse('Model is required', 400, 'invalid_request_error');
+	}
+
+	if (!MODEL_MAPPING[model]) {
+		return createErrorResponse(
+			`Unsupported model: ${model}`,
+			400,
+			'invalid_request_error'
+		);
+	}
+
+	return null;
+}
+
+function validateUnsupportedParameter(
+	value: unknown,
+	name: string
+): Response | null {
+	if (value === undefined) {
+		return null;
+	}
+
+	return createErrorResponse(
+		`${name} is not supported by this gateway yet`,
+		400,
+		'invalid_request_error'
+	);
 }
 
 function createOpenAIResponse(
@@ -462,24 +544,30 @@ async function handleChatCompletion(
 ): Promise<Response> {
 	try {
 		const body = (await request.json()) as ChatCompletionRequest;
-		const { model, messages, temperature, max_tokens, stream } = body;
+		const { model, messages, temperature, max_tokens, top_p, stream } = body;
+
+		const modelError = validateModel(model);
+		if (modelError) {
+			return modelError;
+		}
+
+		const unsupportedParameterError = validateUnsupportedParameter(top_p, 'top_p');
+		if (unsupportedParameterError) {
+			return unsupportedParameterError;
+		}
 
 		if (!messages || !Array.isArray(messages) || messages.length === 0) {
-			return new Response(
-				JSON.stringify({
-					error: {
-						message: 'Messages array is required',
-						type: 'invalid_request_error',
-					},
-				}),
-				{
-					status: 400,
-					headers: { 'Content-Type': 'application/json' },
-				}
-			);
+			return createErrorResponse('Messages array is required', 400, 'invalid_request_error');
 		}
 
 		const cfModel = getCloudflareModel(model);
+		if (!cfModel) {
+			return createErrorResponse(
+				`Unsupported model: ${model}`,
+				400,
+				'invalid_request_error'
+			);
+		}
 
 		// Build AI options
 		const aiOptions: Record<string, unknown> = MESSAGE_NATIVE_MODELS.has(cfModel)
@@ -549,18 +637,7 @@ async function handleChatCompletion(
 		});
 	} catch (error) {
 		const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-		return new Response(
-			JSON.stringify({
-				error: {
-					message: errorMessage,
-					type: 'internal_error',
-				},
-			}),
-			{
-				status: 500,
-				headers: { 'Content-Type': 'application/json' },
-			}
-		);
+		return createErrorResponse(errorMessage, 500, 'internal_error');
 	}
 }
 
@@ -571,24 +648,31 @@ async function handleResponses(
 ): Promise<Response> {
 	try {
 		const body = (await request.json()) as ResponsesRequest;
-		const { model, input, instructions, temperature, max_output_tokens, stream } = body;
+		const { model, input, instructions, temperature, max_output_tokens, top_p, stream } = body;
+
+		const modelError = validateModel(model);
+		if (modelError) {
+			return modelError;
+		}
+
+		const unsupportedParameterError = validateUnsupportedParameter(top_p, 'top_p');
+		if (unsupportedParameterError) {
+			return unsupportedParameterError;
+		}
 
 		if (!input) {
-			return new Response(
-				JSON.stringify({
-					error: {
-						message: 'Input is required',
-						type: 'invalid_request_error',
-					},
-				}),
-				{
-					status: 400,
-					headers: { 'Content-Type': 'application/json' },
-				}
-			);
+			return createErrorResponse('Input is required', 400, 'invalid_request_error');
 		}
 
 		const cfModel = getCloudflareModel(model);
+		if (!cfModel) {
+			return createErrorResponse(
+				`Unsupported model: ${model}`,
+				400,
+				'invalid_request_error'
+			);
+		}
+
 		let prompt = convertInputToPrompt(input);
 
 		// Add instructions if provided
@@ -597,7 +681,9 @@ async function handleResponses(
 		}
 
 		// Build AI options
-		const aiOptions: Record<string, unknown> = { prompt };
+		const aiOptions: Record<string, unknown> = MESSAGE_NATIVE_MODELS.has(cfModel)
+			? { messages: convertResponsesInputToMessages(input, instructions) }
+			: { prompt };
 		if (temperature !== undefined) aiOptions.temperature = temperature;
 		if (max_output_tokens !== undefined) aiOptions.max_tokens = max_output_tokens;
 
@@ -691,18 +777,7 @@ async function handleResponses(
 		});
 	} catch (error) {
 		const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-		return new Response(
-			JSON.stringify({
-				error: {
-					message: errorMessage,
-					type: 'internal_error',
-				},
-			}),
-			{
-				status: 500,
-				headers: { 'Content-Type': 'application/json' },
-			}
-		);
+		return createErrorResponse(errorMessage, 500, 'internal_error');
 	}
 }
 
@@ -733,7 +808,7 @@ export default {
 		const corsHeaders = {
 			'Access-Control-Allow-Origin': '*',
 			'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-			'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+			'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Debug-AI-Response',
 		};
 
 		if (request.method === 'OPTIONS') {
