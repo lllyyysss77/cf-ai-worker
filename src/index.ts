@@ -1,3 +1,10 @@
+import { MODEL_REGISTRY } from './config/models';
+import {
+	createOpenAIResponse,
+	createResponsesResponse,
+} from './responses';
+import { createChatStreamResponse, createResponsesStreamResponse } from './streaming';
+
 export interface Env {
 	AI: Ai;
 	OPENAI_API_KEY?: string;
@@ -78,7 +85,7 @@ function validateApiKey(request: Request, env: Env): Response | null {
 	}
 
 	const token = match[1];
-	if (token !== env.OPENAI_API_KEY) {
+	if (!timingSafeEqual(token, env.OPENAI_API_KEY)) {
 		return new Response(
 			JSON.stringify({
 				error: {
@@ -93,24 +100,18 @@ function validateApiKey(request: Request, env: Env): Response | null {
 	return null;
 }
 
-// Model mapping: OpenAI model name -> Cloudflare AI model name
-// Available models: https://developers.cloudflare.com/workers-ai/models/
-const MODEL_MAPPING: Record<string, string> = {
-	'kimi-k2.5': '@cf/moonshotai/kimi-k2.5',
-	'glm-4.7-flash': '@cf/zai-org/glm-4.7-flash',
-	// DeepSeek models
-	'deepseek-r1': '@cf/deepseek-ai/deepseek-r1-distill-qwen-32b',
-	'deepseek-r1-qwen32b': '@cf/deepseek-ai/deepseek-r1-distill-qwen-32b'
-};
+function timingSafeEqual(a: string, b: string): boolean {
+	if (a.length !== b.length) {
+		return false;
+	}
 
-function getCloudflareModel(model: string): string | null {
-	return MODEL_MAPPING[model] || null;
+	let result = 0;
+	for (let index = 0; index < a.length; index++) {
+		result |= a.charCodeAt(index) ^ b.charCodeAt(index);
+	}
+
+	return result === 0;
 }
-
-const MESSAGE_NATIVE_MODELS = new Set([
-	'@cf/moonshotai/kimi-k2.5',
-	'@cf/zai-org/glm-4.7-flash',
-]);
 
 function shouldIncludeDebugInfo(request: Request): boolean {
 	return request.headers.get('X-Debug-AI-Response') === '1';
@@ -133,6 +134,18 @@ function withDebugInfo(
 			raw_ai_response: rawAiResponse,
 		},
 	};
+}
+
+function withCorsHeaders(response: Response, corsHeaders: Record<string, string>): Response {
+	const headers = new Headers(response.headers);
+	Object.entries(corsHeaders).forEach(([key, value]) => {
+		headers.set(key, value);
+	});
+	return new Response(response.body, {
+		status: response.status,
+		statusText: response.statusText,
+		headers,
+	});
 }
 
 function convertMessagesToPrompt(messages: ChatMessage[]): string {
@@ -184,6 +197,13 @@ function extractAiText(aiResponse: {
 	return '';
 }
 
+function extractTextFromContentItems(items: ResponseContentItem[]): string {
+	return items
+		.filter((c) => c.type === 'input_text' || c.type === 'output_text')
+		.map((c) => c.text || '')
+		.join('');
+}
+
 // Convert Responses API input to prompt string
 function convertInputToPrompt(input: string | ResponseInputItem[]): string {
 	if (typeof input === 'string') {
@@ -198,11 +218,7 @@ function convertInputToPrompt(input: string | ResponseInputItem[]): string {
 			if (typeof item.content === 'string') {
 				content = item.content;
 			} else if (Array.isArray(item.content)) {
-				// Extract text from content items
-				content = item.content
-					.filter((c) => c.type === 'input_text' || c.type === 'output_text')
-					.map((c) => c.text || '')
-					.join('');
+				content = extractTextFromContentItems(item.content);
 			}
 
 			switch (role) {
@@ -240,10 +256,7 @@ function convertResponsesInputToMessages(
 		if (typeof item.content === 'string') {
 			content = item.content;
 		} else if (Array.isArray(item.content)) {
-			content = item.content
-				.filter((c) => c.type === 'input_text' || c.type === 'output_text')
-				.map((c) => c.text || '')
-				.join('');
+			content = extractTextFromContentItems(item.content);
 		}
 
 		messages.push({
@@ -253,6 +266,43 @@ function convertResponsesInputToMessages(
 	}
 
 	return messages;
+}
+
+function buildChatAiOptions(
+	cfModel: string,
+	messages: ChatMessage[],
+	temperature?: number,
+	maxTokens?: number
+): Record<string, unknown> {
+	return {
+		...(MODEL_REGISTRY.isMessageNative(cfModel)
+			? { messages }
+			: { prompt: convertMessagesToPrompt(messages) }),
+		...(temperature !== undefined && { temperature }),
+		...(maxTokens !== undefined && { max_tokens: maxTokens }),
+	};
+}
+
+function buildResponsesAiOptions(
+	cfModel: string,
+	input: string | ResponseInputItem[],
+	instructions: string | undefined,
+	temperature?: number,
+	maxOutputTokens?: number
+): Record<string, unknown> {
+	let prompt = convertInputToPrompt(input);
+
+	if (instructions) {
+		prompt = `[System]\n${instructions}\n\n${prompt}`;
+	}
+
+	return {
+		...(MODEL_REGISTRY.isMessageNative(cfModel)
+			? { messages: convertResponsesInputToMessages(input, instructions) }
+			: { prompt }),
+		...(temperature !== undefined && { temperature }),
+		...(maxOutputTokens !== undefined && { max_tokens: maxOutputTokens }),
+	};
 }
 
 function createErrorResponse(message: string, status: number, type: string): Response {
@@ -275,7 +325,7 @@ function validateModel(model: unknown): Response | null {
 		return createErrorResponse('Model is required', 400, 'invalid_request_error');
 	}
 
-	if (!MODEL_MAPPING[model]) {
+	if (!MODEL_REGISTRY.getCloudflareModel(model)) {
 		return createErrorResponse(
 			`Unsupported model: ${model}`,
 			400,
@@ -290,7 +340,7 @@ function validateUnsupportedParameter(
 	value: unknown,
 	name: string
 ): Response | null {
-	if (value === undefined) {
+	if (value === undefined || value === null) {
 		return null;
 	}
 
@@ -301,241 +351,83 @@ function validateUnsupportedParameter(
 	);
 }
 
-function createOpenAIResponse(
-	model: string,
-	content: string,
-	usage?: { prompt_tokens?: number; completion_tokens?: number }
-): object {
-	const promptTokens = usage?.prompt_tokens || 0;
-	const completionTokens = usage?.completion_tokens || 0;
+function validateNumberParameter(
+	value: unknown,
+	name: string
+): Response | null {
+	if (value === undefined || value === null) {
+		return null;
+	}
 
-	return {
-		id: `chatcmpl-${crypto.randomUUID()}`,
-		object: 'chat.completion',
-		created: Math.floor(Date.now() / 1000),
-		model,
-		choices: [
-			{
-				index: 0,
-				message: {
-					role: 'assistant',
-					content,
-				},
-				finish_reason: 'stop',
-			},
-		],
-		usage: {
-			prompt_tokens: promptTokens,
-			completion_tokens: completionTokens,
-			total_tokens: promptTokens + completionTokens,
-		},
-	};
+	if (typeof value !== 'number' || !Number.isFinite(value)) {
+		return createErrorResponse(
+			`${name} must be a number`,
+			400,
+			'invalid_request_error'
+		);
+	}
+
+	return null;
 }
 
-// Create Responses API compatible response
-function createResponsesResponse(
-	model: string,
-	content: string,
-	usage?: { prompt_tokens?: number; completion_tokens?: number }
-): object {
-	const promptTokens = usage?.prompt_tokens || 0;
-	const completionTokens = usage?.completion_tokens || 0;
-
-	return {
-		id: `resp_${crypto.randomUUID().replace(/-/g, '')}`,
-		object: 'response',
-		created_at: Math.floor(Date.now() / 1000),
-		model,
-		output: [
-			{
-				type: 'message',
-				id: `msg_${crypto.randomUUID().replace(/-/g, '')}`,
-				role: 'assistant',
-				content: [
-					{
-						type: 'output_text',
-						text: content,
-					},
-				],
-			},
-		],
-		usage: {
-			input_tokens: promptTokens,
-			output_tokens: completionTokens,
-			total_tokens: promptTokens + completionTokens,
-		},
-	};
+function isValidMessageRole(role: unknown): role is ChatMessage['role'] {
+	return role === 'system' || role === 'user' || role === 'assistant';
 }
 
-// Create Responses API stream event: response.created
-function createResponsesCreatedEvent(responseId: string, model: string): string {
-	return `data: ${JSON.stringify({
-		type: 'response.created',
-		response: {
-			id: responseId,
-			object: 'response',
-			created_at: Math.floor(Date.now() / 1000),
-			model,
-			status: 'in_progress',
-			error: null,
-			incomplete_details: null,
-			instructions: null,
-			max_output_tokens: null,
-			output: [],
-			parallel_tool_calls: true,
-			previous_response_id: null,
-			reasoning: { effort: 'medium', generate_summary: null },
-			store: true,
-			temperature: 1.0,
-			text: { format: { type: 'text' } },
-			tool_choice: 'auto',
-			tools: [],
-			top_p: 1.0,
-			truncation: 'disabled',
-			usage: null,
-			user: null,
-			metadata: {},
-		},
-	})}\n\n`;
+function validateMessages(messages: unknown): Response | null {
+	if (!Array.isArray(messages) || messages.length === 0) {
+		return createErrorResponse('Messages array is required', 400, 'invalid_request_error');
+	}
+
+	for (const message of messages) {
+		if (!message || typeof message !== 'object') {
+			return createErrorResponse('Each message must be an object', 400, 'invalid_request_error');
+		}
+
+		const { role, content } = message as Record<string, unknown>;
+		if (!isValidMessageRole(role)) {
+			return createErrorResponse('Invalid message role', 400, 'invalid_request_error');
+		}
+		if (typeof content !== 'string') {
+			return createErrorResponse('Message content must be a string', 400, 'invalid_request_error');
+		}
+	}
+
+	return null;
 }
 
-// Create Responses API stream event: response.output_item.added
-function createResponsesOutputItemAddedEvent(responseId: string, itemId: string, outputIndex: number): string {
-	return `data: ${JSON.stringify({
-		type: 'response.output_item.added',
-		output_index: outputIndex,
-		item: {
-			id: itemId,
-			type: 'message',
-			role: 'assistant',
-			content: [],
-			status: 'in_progress',
-		},
-	})}\n\n`;
+function isValidResponsesRole(role: unknown): role is ResponseInputItem['role'] {
+	return role === 'system' || role === 'user' || role === 'assistant';
 }
 
-// Create Responses API stream event: response.content_part.added
-function createResponsesContentPartAddedEvent(itemId: string, outputIndex: number, contentIndex: number): string {
-	return `data: ${JSON.stringify({
-		type: 'response.content_part.added',
-		item_id: itemId,
-		output_index: outputIndex,
-		content_index: contentIndex,
-		part: {
-			type: 'output_text',
-			text: '',
-		},
-	})}\n\n`;
-}
+function validateResponsesInput(input: unknown): Response | null {
+	if (input === undefined || input === null) {
+		return createErrorResponse('Input is required', 400, 'invalid_request_error');
+	}
 
-// Create Responses API stream event: response.output_text.delta
-function createResponsesOutputTextDeltaEvent(itemId: string, outputIndex: number, contentIndex: number, delta: string): string {
-	return `data: ${JSON.stringify({
-		type: 'response.output_text.delta',
-		item_id: itemId,
-		output_index: outputIndex,
-		content_index: contentIndex,
-		delta,
-	})}\n\n`;
-}
+	if (typeof input === 'string') {
+		return null;
+	}
 
-// Create Responses API stream event: response.output_text.done
-function createResponsesOutputTextDoneEvent(itemId: string, outputIndex: number, contentIndex: number, text: string): string {
-	return `data: ${JSON.stringify({
-		type: 'response.output_text.done',
-		item_id: itemId,
-		output_index: outputIndex,
-		content_index: contentIndex,
-		text,
-	})}\n\n`;
-}
+	if (!Array.isArray(input)) {
+		return createErrorResponse('Input must be a string or an array', 400, 'invalid_request_error');
+	}
 
-// Create Responses API stream event: response.content_part.done
-function createResponsesContentPartDoneEvent(itemId: string, outputIndex: number, contentIndex: number): string {
-	return `data: ${JSON.stringify({
-		type: 'response.content_part.done',
-		item_id: itemId,
-		output_index: outputIndex,
-		content_index: contentIndex,
-		part: {
-			type: 'output_text',
-			text: '',
-		},
-	})}\n\n`;
-}
+	for (const item of input) {
+		if (!item || typeof item !== 'object') {
+			return createErrorResponse('Each input item must be an object', 400, 'invalid_request_error');
+		}
 
-// Create Responses API stream event: response.output_item.done
-function createResponsesOutputItemDoneEvent(itemId: string, outputIndex: number): string {
-	return `data: ${JSON.stringify({
-		type: 'response.output_item.done',
-		output_index: outputIndex,
-		item: {
-			id: itemId,
-			type: 'message',
-			role: 'assistant',
-			content: [],
-			status: 'completed',
-		},
-	})}\n\n`;
-}
+		const { role, content } = item as Record<string, unknown>;
+		if (!isValidResponsesRole(role)) {
+			return createErrorResponse('Invalid input item role', 400, 'invalid_request_error');
+		}
+		if (typeof content !== 'string' && !Array.isArray(content)) {
+			return createErrorResponse('Input item content must be a string or an array', 400, 'invalid_request_error');
+		}
+	}
 
-// Create Responses API stream event: response.completed
-function createResponsesCompletedEvent(responseId: string, model: string, inputTokens: number, outputTokens: number): string {
-	return `data: ${JSON.stringify({
-		type: 'response.completed',
-		response: {
-			id: responseId,
-			object: 'response',
-			created_at: Math.floor(Date.now() / 1000),
-			model,
-			status: 'completed',
-			error: null,
-			incomplete_details: null,
-			instructions: null,
-			max_output_tokens: null,
-			output: [],
-			parallel_tool_calls: true,
-			previous_response_id: null,
-			reasoning: { effort: 'medium', generate_summary: null },
-			store: true,
-			temperature: 1.0,
-			text: { format: { type: 'text' } },
-			tool_choice: 'auto',
-			tools: [],
-			top_p: 1.0,
-			truncation: 'disabled',
-			usage: {
-				input_tokens: inputTokens,
-				output_tokens: outputTokens,
-				total_tokens: inputTokens + outputTokens,
-				input_tokens_details: { cached_tokens: 0 },
-				output_tokens_details: { reasoning_tokens: 0 },
-			},
-			user: null,
-			metadata: {},
-		},
-	})}\n\n`;
-}
-
-function createStreamChunk(model: string, content: string, isDone: boolean = false): string {
-	const chunk = {
-		id: `chatcmpl-${crypto.randomUUID()}`,
-		object: 'chat.completion.chunk',
-		created: Math.floor(Date.now() / 1000),
-		model,
-		choices: [
-			{
-				index: 0,
-				delta: isDone
-					? {}
-					: {
-							content,
-						},
-				finish_reason: isDone ? 'stop' : null,
-			},
-		],
-	};
-	return `data: ${JSON.stringify(chunk)}\n\n`;
+	return null;
 }
 
 async function handleChatCompletion(
@@ -556,25 +448,23 @@ async function handleChatCompletion(
 			return unsupportedParameterError;
 		}
 
-		if (!messages || !Array.isArray(messages) || messages.length === 0) {
-			return createErrorResponse('Messages array is required', 400, 'invalid_request_error');
+		const messagesError = validateMessages(messages);
+		if (messagesError) {
+			return messagesError;
 		}
 
-		const cfModel = getCloudflareModel(model);
-		if (!cfModel) {
-			return createErrorResponse(
-				`Unsupported model: ${model}`,
-				400,
-				'invalid_request_error'
-			);
+		const temperatureError = validateNumberParameter(temperature, 'temperature');
+		if (temperatureError) {
+			return temperatureError;
 		}
 
-		// Build AI options
-		const aiOptions: Record<string, unknown> = MESSAGE_NATIVE_MODELS.has(cfModel)
-			? { messages }
-			: { prompt: convertMessagesToPrompt(messages) };
-		if (temperature !== undefined) aiOptions.temperature = temperature;
-		if (max_tokens !== undefined) aiOptions.max_tokens = max_tokens;
+		const maxTokensError = validateNumberParameter(max_tokens, 'max_tokens');
+		if (maxTokensError) {
+			return maxTokensError;
+		}
+
+		const cfModel = MODEL_REGISTRY.getCloudflareModel(model)!;
+		const aiOptions = buildChatAiOptions(cfModel, messages, temperature, max_tokens);
 
 		const aiResponse = (await env.AI.run(cfModel, aiOptions)) as {
 			response?: string;
@@ -589,45 +479,11 @@ async function handleChatCompletion(
 		const content = extractAiText(aiResponse);
 
 		if (stream) {
-			// Streaming response
-			const encoder = new TextEncoder();
-			const streamContent = content;
-			let index = 0;
-
-			const readableStream = new ReadableStream({
-				start(controller) {
-					const sendChunk = () => {
-						if (index < streamContent.length) {
-							const chunk = streamContent.slice(index, index + 4);
-							controller.enqueue(
-								encoder.encode(createStreamChunk(model || cfModel, chunk))
-							);
-							index += 4;
-							setTimeout(sendChunk, 20);
-						} else {
-							controller.enqueue(
-								encoder.encode(createStreamChunk(model || cfModel, '', true))
-							);
-							controller.enqueue(encoder.encode('data: [DONE]\n\n'));
-							controller.close();
-						}
-					};
-					sendChunk();
-				},
-			});
-
-			return new Response(readableStream, {
-				headers: {
-					'Content-Type': 'text/event-stream',
-					'Cache-Control': 'no-cache',
-					Connection: 'keep-alive',
-				},
-			});
+			return createChatStreamResponse(model, content);
 		}
 
-		// Non-streaming response
 		const response = withDebugInfo(
-			createOpenAIResponse(model || cfModel, content, aiResponse.usage) as Record<string, unknown>,
+			createOpenAIResponse(model, content, aiResponse.usage),
 			request,
 			cfModel,
 			aiResponse
@@ -636,8 +492,8 @@ async function handleChatCompletion(
 			headers: { 'Content-Type': 'application/json' },
 		});
 	} catch (error) {
-		const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-		return createErrorResponse(errorMessage, 500, 'internal_error');
+		console.error('Chat completion failed:', error);
+		return createErrorResponse('Internal server error', 500, 'internal_error');
 	}
 }
 
@@ -660,32 +516,23 @@ async function handleResponses(
 			return unsupportedParameterError;
 		}
 
-		if (!input) {
-			return createErrorResponse('Input is required', 400, 'invalid_request_error');
+		const inputError = validateResponsesInput(input);
+		if (inputError) {
+			return inputError;
 		}
 
-		const cfModel = getCloudflareModel(model);
-		if (!cfModel) {
-			return createErrorResponse(
-				`Unsupported model: ${model}`,
-				400,
-				'invalid_request_error'
-			);
+		const temperatureError = validateNumberParameter(temperature, 'temperature');
+		if (temperatureError) {
+			return temperatureError;
 		}
 
-		let prompt = convertInputToPrompt(input);
-
-		// Add instructions if provided
-		if (instructions) {
-			prompt = `[System]\n${instructions}\n\n${prompt}`;
+		const maxOutputTokensError = validateNumberParameter(max_output_tokens, 'max_output_tokens');
+		if (maxOutputTokensError) {
+			return maxOutputTokensError;
 		}
 
-		// Build AI options
-		const aiOptions: Record<string, unknown> = MESSAGE_NATIVE_MODELS.has(cfModel)
-			? { messages: convertResponsesInputToMessages(input, instructions) }
-			: { prompt };
-		if (temperature !== undefined) aiOptions.temperature = temperature;
-		if (max_output_tokens !== undefined) aiOptions.max_tokens = max_output_tokens;
+		const cfModel = MODEL_REGISTRY.getCloudflareModel(model)!;
+		const aiOptions = buildResponsesAiOptions(cfModel, input, instructions, temperature, max_output_tokens);
 
 		const aiResponse = (await env.AI.run(cfModel, aiOptions)) as {
 			response?: string;
@@ -700,74 +547,11 @@ async function handleResponses(
 		const content = extractAiText(aiResponse);
 
 		if (stream) {
-			// Streaming response with proper event sequence
-			const encoder = new TextEncoder();
-			const streamContent = content;
-			const responseId = `resp_${crypto.randomUUID().replace(/-/g, '')}`;
-			const itemId = `msg_${crypto.randomUUID().replace(/-/g, '')}`;
-			const outputIndex = 0;
-			const contentIndex = 0;
-			let index = 0;
-
-			const readableStream = new ReadableStream({
-				start(controller) {
-					// Send initial events
-					controller.enqueue(
-						encoder.encode(createResponsesCreatedEvent(responseId, model || cfModel))
-					);
-					controller.enqueue(
-						encoder.encode(createResponsesOutputItemAddedEvent(responseId, itemId, outputIndex))
-					);
-					controller.enqueue(
-						encoder.encode(createResponsesContentPartAddedEvent(itemId, outputIndex, contentIndex))
-					);
-
-					const sendChunk = () => {
-						if (index < streamContent.length) {
-							const chunk = streamContent.slice(index, index + 4);
-							controller.enqueue(
-								encoder.encode(createResponsesOutputTextDeltaEvent(itemId, outputIndex, contentIndex, chunk))
-							);
-							index += 4;
-							setTimeout(sendChunk, 20);
-						} else {
-							// Send completion events
-							controller.enqueue(
-								encoder.encode(createResponsesOutputTextDoneEvent(itemId, outputIndex, contentIndex, streamContent))
-							);
-							controller.enqueue(
-								encoder.encode(createResponsesContentPartDoneEvent(itemId, outputIndex, contentIndex))
-							);
-							controller.enqueue(
-								encoder.encode(createResponsesOutputItemDoneEvent(itemId, outputIndex))
-							);
-							controller.enqueue(
-								encoder.encode(createResponsesCompletedEvent(
-									responseId,
-									model || cfModel,
-									aiResponse.usage?.prompt_tokens || 0,
-									aiResponse.usage?.completion_tokens || Math.ceil(streamContent.length / 4)
-								))
-							);
-							controller.close();
-						}
-					};
-					sendChunk();
-				},
-			});
-
-			return new Response(readableStream, {
-				headers: {
-					'Content-Type': 'text/event-stream',
-					'Cache-Control': 'no-cache',
-					Connection: 'keep-alive',
-				},
-			});
+			return createResponsesStreamResponse(model, content, aiResponse.usage);
 		}
 
-		// Non-streaming response
 		const response = withDebugInfo(
-			createResponsesResponse(model || cfModel, content, aiResponse.usage) as Record<string, unknown>,
+			createResponsesResponse(model, content, aiResponse.usage),
 			request,
 			cfModel,
 			aiResponse
@@ -776,23 +560,17 @@ async function handleResponses(
 			headers: { 'Content-Type': 'application/json' },
 		});
 	} catch (error) {
-		const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-		return createErrorResponse(errorMessage, 500, 'internal_error');
+		console.error('Responses request failed:', error);
+		return createErrorResponse('Internal server error', 500, 'internal_error');
 	}
 }
 
 // List available models (OpenAI compatible)
 function handleListModels(): Response {
-	const models = [
-		{ id: 'kimi-k2.5', object: 'model', owned_by: 'openai' },
-		{ id: 'glm-4.7-flash', object: 'model', owned_by: 'openai' },
-		{ id: 'deepseek-r1-qwen32b', object: 'model', owned_by: 'deepseek-ai' }
-	];
-
 	return new Response(
 		JSON.stringify({
 			object: 'list',
-			data: models,
+			data: MODEL_REGISTRY.listedModels,
 		}),
 		{
 			headers: { 'Content-Type': 'application/json' },
@@ -820,11 +598,7 @@ export default {
 		if (protectedEndpoints.includes(url.pathname) && request.method === 'POST') {
 			const authError = validateApiKey(request, env);
 			if (authError) {
-				// Add CORS headers to error response
-				Object.entries(corsHeaders).forEach(([key, value]) => {
-					authError.headers.set(key, value);
-				});
-				return authError;
+				return withCorsHeaders(authError, corsHeaders);
 			}
 		}
 
@@ -852,11 +626,6 @@ export default {
 			);
 		}
 
-		// Add CORS headers to response
-		Object.entries(corsHeaders).forEach(([key, value]) => {
-			response.headers.set(key, value);
-		});
-
-		return response;
+		return withCorsHeaders(response, corsHeaders);
 	},
 };
