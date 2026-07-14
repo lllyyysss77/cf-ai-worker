@@ -33,6 +33,77 @@
 - `glm-4.7-flash`
 - `deepseek-r1-qwen32b`
 
+## 如何新增或更新模型
+
+所有模型映射都在 `src/config/models.ts` 里维护。要新增模型或修改已有模型的映射，只需要编辑这个文件，不需要改 `src/index.ts`。
+
+### 配置字段说明
+
+```typescript
+{
+  requestModelId: 'kimi-k2.5',      // 客户端请求时使用的模型 ID
+  cloudflareModelId: '@cf/moonshotai/kimi-k2.5', // Cloudflare Workers AI 模型 ID
+  messageNative: true,              // true: 透传 messages 数组；false: 转成单个 prompt
+  listed: true,                     // true: 出现在 /v1/models 列表
+  ownedBy: 'openai',                // /v1/models 返回的 owned_by 字段
+}
+```
+
+### 示例：把 `kimi-k2.5` 升级到 `kimi-k2.7`
+
+假设 Cloudflare 侧可用的模型名变成了 `@cf/moonshotai/kimi-k2.7`，而你希望客户端继续用 `kimi-k2.7` 来请求：
+
+1. 打开 `src/config/models.ts`。
+2. 找到 `kimi-k2.5` 对应的条目，改成：
+
+   ```typescript
+   {
+     requestModelId: 'kimi-k2.7',
+     cloudflareModelId: '@cf/moonshotai/kimi-k2.7',
+     messageNative: true,
+     listed: true,
+     ownedBy: 'openai',
+   },
+   ```
+
+3. 运行测试：
+
+   ```bash
+   npm test
+   ```
+
+4. 部署：
+
+   ```bash
+   npm run deploy
+   ```
+
+### 示例：保留旧别名
+
+如果你想让旧 ID `kimi-k2.5` 仍然可用，同时引入新的 `kimi-k2.7`，可以加两个条目：
+
+```typescript
+{
+  requestModelId: 'kimi-k2.7',
+  cloudflareModelId: '@cf/moonshotai/kimi-k2.7',
+  messageNative: true,
+  listed: true,
+  ownedBy: 'openai',
+},
+{
+  requestModelId: 'kimi-k2.5',
+  cloudflareModelId: '@cf/moonshotai/kimi-k2.7',
+  messageNative: true,
+  listed: false, // 不在 /v1/models 中展示旧别名
+},
+```
+
+### 注意事项
+
+- `requestModelId` 不能重复。
+- 同一个 `cloudflareModelId` 在所有条目里的 `messageNative` 必须一致。
+- 如果配置格式错误，Worker 启动时会直接抛错，方便快速发现。
+
 ## 当前行为说明
 
 - `model` 是必填字段
