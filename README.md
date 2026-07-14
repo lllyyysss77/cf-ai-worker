@@ -156,8 +156,13 @@ curl -X POST https://your-worker.your-subdomain.workers.dev/v1/chat/completions 
 ```text
 cf-ai-worker/
 ├── src/
-│   └── index.ts
+│   ├── config/
+│   │   └── models.ts      # 模型映射配置
+│   ├── responses.ts       # OpenAI / Responses API 响应构造
+│   ├── streaming.ts       # SSE 流式响应构造
+│   └── index.ts           # Worker 入口与路由
 ├── tests/
+│   ├── model-config.test.mjs
 │   └── model-routing.test.mjs
 ├── package.json
 ├── wrangler.jsonc
