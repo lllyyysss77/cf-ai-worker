@@ -1,0 +1,365 @@
+# Instincts generated from https://github.com/lllyyysss77/cf-ai-worker
+# Generated: 2026-08-02T15:12:54.524Z
+# Version: 2.0
+# NOTE: This file supplements (does not replace) any existing curated instincts.
+# High-confidence manually curated instincts should be preserved alongside these.
+
+---
+id: cf-ai-worker-commit-conventional
+trigger: "when writing a commit message"
+confidence: 0.85
+domain: git
+source: repo-analysis
+source_repo: https://github.com/lllyyysss77/cf-ai-worker
+---
+
+# Cf Ai Worker Commit Conventional
+
+## Action
+
+Use conventional commit format with prefixes: docs, feat, chore
+
+## Evidence
+
+- 5 commits analyzed
+- Detected conventional commit pattern
+- Examples: docs: explain how to add or update model mappings, feat: refresh Workers AI model lineup
+
+---
+id: cf-ai-worker-commit-length
+trigger: "when writing a commit message"
+confidence: 0.6
+domain: git
+source: repo-analysis
+source_repo: https://github.com/lllyyysss77/cf-ai-worker
+---
+
+# Cf Ai Worker Commit Length
+
+## Action
+
+Keep commit messages concise (~45 characters)
+
+## Evidence
+
+- Average commit message length: 45 chars
+- Based on 5 commits
+
+---
+id: cf-ai-worker-naming-files
+trigger: "when creating a new file"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/lllyyysss77/cf-ai-worker
+---
+
+# Cf Ai Worker Naming Files
+
+## Action
+
+Use kebab-case naming convention
+
+## Evidence
+
+- Analyzed file naming patterns in repository
+- Dominant pattern: kebab-case
+
+---
+id: cf-ai-worker-export-style
+trigger: "when exporting from a module"
+confidence: 0.7
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/lllyyysss77/cf-ai-worker
+---
+
+# Cf Ai Worker Export Style
+
+## Action
+
+Prefer named exports
+
+## Evidence
+
+- Export pattern analysis
+- Dominant style: named
+
+---
+id: cf-ai-worker-test-separate
+trigger: "when writing tests"
+confidence: 0.8
+domain: testing
+source: repo-analysis
+source_repo: https://github.com/lllyyysss77/cf-ai-worker
+---
+
+# Cf Ai Worker Test Separate
+
+## Action
+
+Place tests in the tests/ or __tests__/ directory, mirroring src structure
+
+## Evidence
+
+- Separate test directory pattern detected
+- Tests live in dedicated test folders
+
+---
+id: cf-ai-worker-workflow-model-config-refresh
+trigger: "when doing model config refresh"
+confidence: 0.6
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/lllyyysss77/cf-ai-worker
+---
+
+# Cf Ai Worker Workflow Model Config Refresh
+
+## Action
+
+Follow the model-config-refresh workflow:
+1. Update model configuration in src/config/models.ts
+2. Add or update plan and design docs in docs/superpowers/plans/ and docs/superpowers/specs/
+3. Update README.md with usage or mapping instructions
+4. Update or add tests in tests/model-config.test.mjs and tests/model-routing.test.mjs
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~2x per month
+- Files: src/config/models.ts, docs/superpowers/plans/*.md, docs/superpowers/specs/*.md
+
+---
+id: cf-ai-worker-instinct-file-naming
+trigger: "When creating or renaming a file in the repository"
+confidence: 0.9
+domain: code-style
+source: repo-analysis
+source_repo: lllyyysss77/cf-ai-worker
+---
+
+# Cf Ai Worker Instinct File Naming
+
+## Action
+
+Use kebab-case for file names (e.g., model-config.ts)
+
+## Evidence
+
+- Pattern in namingConventions.files
+- All files in src/config/ use kebab-case
+
+---
+id: cf-ai-worker-instinct-function-naming
+trigger: "When defining a function"
+confidence: 0.9
+domain: code-style
+source: repo-analysis
+source_repo: lllyyysss77/cf-ai-worker
+---
+
+# Cf Ai Worker Instinct Function Naming
+
+## Action
+
+Use camelCase for function names
+
+## Evidence
+
+- Pattern in namingConventions.functions
+
+---
+id: cf-ai-worker-instinct-class-naming
+trigger: "When defining a class"
+confidence: 0.9
+domain: code-style
+source: repo-analysis
+source_repo: lllyyysss77/cf-ai-worker
+---
+
+# Cf Ai Worker Instinct Class Naming
+
+## Action
+
+Use PascalCase for class names
+
+## Evidence
+
+- Pattern in namingConventions.classes
+
+---
+id: cf-ai-worker-instinct-constant-naming
+trigger: "When defining a constant"
+confidence: 0.9
+domain: code-style
+source: repo-analysis
+source_repo: lllyyysss77/cf-ai-worker
+---
+
+# Cf Ai Worker Instinct Constant Naming
+
+## Action
+
+Use SCREAMING_SNAKE_CASE for constant names
+
+## Evidence
+
+- Pattern in namingConventions.constants
+
+---
+id: cf-ai-worker-instinct-import-style
+trigger: "When importing modules"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: lllyyysss77/cf-ai-worker
+---
+
+# Cf Ai Worker Instinct Import Style
+
+## Action
+
+Use absolute import paths
+
+## Evidence
+
+- Pattern in importStyle: absolute
+
+---
+id: cf-ai-worker-instinct-export-style
+trigger: "When exporting modules or functions"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: lllyyysss77/cf-ai-worker
+---
+
+# Cf Ai Worker Instinct Export Style
+
+## Action
+
+Use named exports
+
+## Evidence
+
+- Pattern in exportStyle: named
+
+---
+id: cf-ai-worker-instinct-test-location
+trigger: "When adding or updating tests"
+confidence: 0.9
+domain: testing
+source: repo-analysis
+source_repo: lllyyysss77/cf-ai-worker
+---
+
+# Cf Ai Worker Instinct Test Location
+
+## Action
+
+Place test files in the 'tests' directory, separate from source code
+
+## Evidence
+
+- Pattern in architecture.testLocation: separate
+- tests/model-config.test.mjs and tests/model-routing.test.mjs
+
+---
+id: cf-ai-worker-instinct-test-naming
+trigger: "When naming test files"
+confidence: 0.8
+domain: testing
+source: repo-analysis
+source_repo: lllyyysss77/cf-ai-worker
+---
+
+# Cf Ai Worker Instinct Test Naming
+
+## Action
+
+Name test files with .test.mjs suffix
+
+## Evidence
+
+- tests/model-config.test.mjs
+- tests/model-routing.test.mjs
+
+---
+id: cf-ai-worker-instinct-test-update-for-model-refresh
+trigger: "When updating model configuration"
+confidence: 0.9
+domain: testing
+source: repo-analysis
+source_repo: lllyyysss77/cf-ai-worker
+---
+
+# Cf Ai Worker Instinct Test Update For Model Refresh
+
+## Action
+
+Update or add corresponding tests in tests/model-config.test.mjs and tests/model-routing.test.mjs
+
+## Evidence
+
+- model-config-refresh workflow step: Update or add tests in tests/model-config.test.mjs and tests/model-routing.test.mjs
+
+---
+id: cf-ai-worker-instinct-commit-format
+trigger: "When making a commit"
+confidence: 0.9
+domain: git
+source: repo-analysis
+source_repo: lllyyysss77/cf-ai-worker
+---
+
+# Cf Ai Worker Instinct Commit Format
+
+## Action
+
+Use Conventional Commits format with prefixes: docs, feat, chore
+
+## Evidence
+
+- Pattern in commits.prefixes
+- Examples: 'docs: explain how to add or update model mappings', 'feat: refresh Workers AI model lineup'
+
+---
+id: cf-ai-worker-instinct-commit-length
+trigger: "When writing a commit message"
+confidence: 0.7
+domain: git
+source: repo-analysis
+source_repo: lllyyysss77/cf-ai-worker
+---
+
+# Cf Ai Worker Instinct Commit Length
+
+## Action
+
+Keep commit message length around 45 characters on average
+
+## Evidence
+
+- Pattern in commits.averageLength: 45
+
+---
+id: cf-ai-worker-instinct-model-config-refresh
+trigger: "When someone wants to add, update, or refresh available AI models and document the changes"
+confidence: 0.9
+domain: workflow
+source: repo-analysis
+source_repo: lllyyysss77/cf-ai-worker
+---
+
+# Cf Ai Worker Instinct Model Config Refresh
+
+## Action
+
+Follow the model-config-refresh workflow: update src/config/models.ts, update docs/superpowers/plans/ and docs/superpowers/specs/, update README.md, update or add tests in tests/model-config.test.mjs and tests/model-routing.test.mjs
+
+## Evidence
+
+- model-config-refresh workflow definition
+- Example commit sequences and files
+
