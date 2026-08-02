@@ -1,0 +1,6 @@
+interface:
+  display_name: "Cf Ai Worker"
+  short_description: "Repo-specific patterns and workflows for cf-ai-worker"
+  default_prompt: "Use the cf-ai-worker repo skill to follow existing architecture, testing, and workflow conventions."
+policy:
+  allow_implicit_invocation: true
