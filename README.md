@@ -22,24 +22,99 @@
 
 | 请求模型 ID | Cloudflare Workers AI 模型 |
 | --- | --- |
-| `kimi-k2.5` | `@cf/moonshotai/kimi-k2.5` |
+| `kimi-k2.6` | `@cf/moonshotai/kimi-k2.6` |
+| `kimi-k2.5` | `@cf/moonshotai/kimi-k2.6`（隐藏兼容别名） |
 | `glm-4.7-flash` | `@cf/zai-org/glm-4.7-flash` |
 | `deepseek-r1` | `@cf/deepseek-ai/deepseek-r1-distill-qwen-32b` |
 | `deepseek-r1-qwen32b` | `@cf/deepseek-ai/deepseek-r1-distill-qwen-32b` |
+| `gpt-oss-120b` | `@cf/openai/gpt-oss-120b` |
 
 `GET /v1/models` 当前返回的公开模型列表是：
 
-- `kimi-k2.5`
+- `kimi-k2.6`
 - `glm-4.7-flash`
 - `deepseek-r1-qwen32b`
+- `gpt-oss-120b`
+
+## 如何新增或更新模型
+
+所有运行时模型映射都在 `src/config/models.ts` 里维护，不需要修改 `src/index.ts`。修改默认模型后，还要同步更新相关测试和本 README 中的支持模型、行为说明及请求示例。
+
+### 配置字段说明
+
+```typescript
+{
+  requestModelId: 'kimi-k2.6',      // 客户端请求时使用的模型 ID
+  cloudflareModelId: '@cf/moonshotai/kimi-k2.6', // Cloudflare Workers AI 模型 ID
+  messageNative: true,              // true: 透传 messages 数组；false: 转成单个 prompt
+  listed: true,                     // true: 出现在 /v1/models 列表
+  ownedBy: 'openai',                // /v1/models 返回的 owned_by 字段
+}
+```
+
+### 示例：新增 `gpt-oss-120b`
+
+假设要公开 Cloudflare 的 `@cf/openai/gpt-oss-120b`：
+
+1. 打开 `src/config/models.ts`。
+2. 在 `models` 数组中加入：
+
+   ```typescript
+   {
+     requestModelId: 'gpt-oss-120b',
+     cloudflareModelId: '@cf/openai/gpt-oss-120b',
+     messageNative: true,
+     listed: true,
+     ownedBy: 'openai',
+   },
+   ```
+
+3. 同步更新 `tests/model-config.test.mjs`、`tests/model-routing.test.mjs` 和本 README。
+4. 运行测试：
+
+   ```bash
+   npm test
+   ```
+
+5. 部署：
+
+   ```bash
+   npm run deploy
+   ```
+
+### 示例：保留旧别名
+
+如果你想让旧 ID `kimi-k2.5` 仍然可用，同时公开新的 `kimi-k2.6`，可以加两个条目：
+
+```typescript
+{
+  requestModelId: 'kimi-k2.6',
+  cloudflareModelId: '@cf/moonshotai/kimi-k2.6',
+  messageNative: true,
+  listed: true,
+  ownedBy: 'openai',
+},
+{
+  requestModelId: 'kimi-k2.5',
+  cloudflareModelId: '@cf/moonshotai/kimi-k2.6',
+  messageNative: true,
+  listed: false, // 不在 /v1/models 中展示旧别名
+},
+```
+
+### 注意事项
+
+- `requestModelId` 不能重复。
+- 同一个 `cloudflareModelId` 在所有条目里的 `messageNative` 必须一致。
+- 如果配置格式错误，Worker 启动时会直接抛错，方便快速发现。
 
 ## 当前行为说明
 
 - `model` 是必填字段
 - `top_p` 目前未实现
   - 传入后会直接返回 `400 invalid_request_error`
-- `/v1/responses` 对 `kimi-k2.5` 和 `glm-4.7-flash` 会优先转成 `messages` 调用
-- 其他已支持模型仍会把输入整理成单个 `prompt`
+- `/v1/responses` 对 `kimi-k2.6`、兼容别名 `kimi-k2.5`、`glm-4.7-flash` 和 `gpt-oss-120b` 会优先转成 `messages` 调用
+- DeepSeek 模型会把输入整理成单个 `prompt`
 - `stream: true` 已支持 SSE 输出
 
 ## 快速开始
@@ -101,7 +176,7 @@ curl -X POST https://your-worker.your-subdomain.workers.dev/v1/responses \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer your-api-key" \
   -d '{
-    "model": "kimi-k2.5",
+    "model": "kimi-k2.6",
     "input": [
       {
         "role": "user",
