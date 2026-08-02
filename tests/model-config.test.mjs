@@ -26,8 +26,10 @@ async function loadConfigModule() {
 test('default registry maps request model ids to Cloudflare model ids', async () => {
 	const { MODEL_REGISTRY } = await loadConfigModule();
 
-	assert.equal(MODEL_REGISTRY.getCloudflareModel('kimi-k2.5'), '@cf/moonshotai/kimi-k2.5');
+	assert.equal(MODEL_REGISTRY.getCloudflareModel('kimi-k2.6'), '@cf/moonshotai/kimi-k2.6');
+	assert.equal(MODEL_REGISTRY.getCloudflareModel('kimi-k2.5'), '@cf/moonshotai/kimi-k2.6');
 	assert.equal(MODEL_REGISTRY.getCloudflareModel('glm-4.7-flash'), '@cf/zai-org/glm-4.7-flash');
+	assert.equal(MODEL_REGISTRY.getCloudflareModel('gpt-oss-120b'), '@cf/openai/gpt-oss-120b');
 	assert.equal(
 		MODEL_REGISTRY.getCloudflareModel('deepseek-r1'),
 		'@cf/deepseek-ai/deepseek-r1-distill-qwen-32b'
@@ -42,8 +44,9 @@ test('default registry maps request model ids to Cloudflare model ids', async ()
 test('default registry marks message-native Cloudflare models', async () => {
 	const { MODEL_REGISTRY } = await loadConfigModule();
 
-	assert.equal(MODEL_REGISTRY.isMessageNative('@cf/moonshotai/kimi-k2.5'), true);
+	assert.equal(MODEL_REGISTRY.isMessageNative('@cf/moonshotai/kimi-k2.6'), true);
 	assert.equal(MODEL_REGISTRY.isMessageNative('@cf/zai-org/glm-4.7-flash'), true);
+	assert.equal(MODEL_REGISTRY.isMessageNative('@cf/openai/gpt-oss-120b'), true);
 	assert.equal(
 		MODEL_REGISTRY.isMessageNative('@cf/deepseek-ai/deepseek-r1-distill-qwen-32b'),
 		false
@@ -55,9 +58,10 @@ test('default registry exposes listed models for /v1/models', async () => {
 	const { MODEL_REGISTRY } = await loadConfigModule();
 
 	assert.deepEqual(MODEL_REGISTRY.listedModels, [
-		{ id: 'kimi-k2.5', object: 'model', owned_by: 'openai' },
+		{ id: 'kimi-k2.6', object: 'model', owned_by: 'openai' },
 		{ id: 'glm-4.7-flash', object: 'model', owned_by: 'openai' },
 		{ id: 'deepseek-r1-qwen32b', object: 'model', owned_by: 'deepseek-ai' },
+		{ id: 'gpt-oss-120b', object: 'model', owned_by: 'openai' },
 	]);
 });
 

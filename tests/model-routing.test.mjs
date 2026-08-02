@@ -89,12 +89,12 @@ async function createChatCompletionRequest(body, headers = {}) {
 	});
 }
 
-async function createResponsesRequest(body) {
+async function createResponsesRequest(body, headers = {}) {
 	const { default: worker } = await loadWorkerModule();
 	const calls = [];
 	const request = new Request('https://example.com/v1/responses', {
 		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
+		headers: { 'Content-Type': 'application/json', ...headers },
 		body: JSON.stringify(body),
 	});
 
@@ -110,9 +110,19 @@ async function createResponsesRequest(body) {
 	return { response, calls };
 }
 
-test('routes kimi-k2.5 to the Cloudflare Moonshot model id', async () => {
-	const call = await callChatCompletion('kimi-k2.5');
-	assert.equal(call.cfModel, '@cf/moonshotai/kimi-k2.5');
+test('routes new and compatible chat models through native messages', async () => {
+	const cases = [
+		['kimi-k2.6', '@cf/moonshotai/kimi-k2.6'],
+		['kimi-k2.5', '@cf/moonshotai/kimi-k2.6'],
+		['gpt-oss-120b', '@cf/openai/gpt-oss-120b'],
+	];
+
+	for (const [model, expectedCloudflareModel] of cases) {
+		const call = await callChatCompletion(model);
+		assert.equal(call.cfModel, expectedCloudflareModel);
+		assert.deepEqual(call.options.messages, [{ role: 'user', content: 'hello' }]);
+		assert.equal(call.options.prompt, undefined);
+	}
 });
 
 test('routes glm-4.7-flash to the Cloudflare Z.ai model id', async () => {
@@ -142,8 +152,22 @@ test('lists the model ids exposed by the gateway', async () => {
 
 	assert.deepEqual(
 		payload.data.map((model) => model.id),
-		['kimi-k2.5', 'glm-4.7-flash', 'deepseek-r1-qwen32b']
+		['kimi-k2.6', 'glm-4.7-flash', 'deepseek-r1-qwen32b', 'gpt-oss-120b']
 	);
+});
+
+test('keeps the requested Kimi compatibility model in chat responses', async () => {
+	const response = await createChatCompletionRequest(
+		{
+			model: 'kimi-k2.5',
+			messages: [{ role: 'user', content: 'hello' }],
+		},
+		{ 'X-Debug-AI-Response': '1' }
+	);
+	const payload = await response.json();
+
+	assert.equal(payload.model, 'kimi-k2.5');
+	assert.equal(payload.debug.cloudflare_model, '@cf/moonshotai/kimi-k2.6');
 });
 
 test('includes raw AI response when debug header is enabled', async () => {
@@ -275,6 +299,37 @@ test('routes responses requests through native message models when supported', a
 		{ role: 'user', content: 'hello' },
 	]);
 	assert.equal(calls[0].options.prompt, undefined);
+});
+
+test('routes new and compatible Responses models through native messages', async () => {
+	const cases = [
+		['kimi-k2.6', '@cf/moonshotai/kimi-k2.6'],
+		['kimi-k2.5', '@cf/moonshotai/kimi-k2.6'],
+		['gpt-oss-120b', '@cf/openai/gpt-oss-120b'],
+	];
+
+	for (const [model, expectedCloudflareModel] of cases) {
+		const { response, calls } = await createResponsesRequest({ model, input: 'hello' });
+		const payload = await response.json();
+
+		assert.equal(response.status, 200);
+		assert.equal(payload.model, model);
+		assert.equal(calls.length, 1);
+		assert.equal(calls[0].cfModel, expectedCloudflareModel);
+		assert.deepEqual(calls[0].options.messages, [{ role: 'user', content: 'hello' }]);
+		assert.equal(calls[0].options.prompt, undefined);
+	}
+});
+
+test('exposes the Kimi compatibility target in Responses debug metadata', async () => {
+	const { response } = await createResponsesRequest(
+		{ model: 'kimi-k2.5', input: 'hello' },
+		{ 'X-Debug-AI-Response': '1' }
+	);
+	const payload = await response.json();
+
+	assert.equal(payload.model, 'kimi-k2.5');
+	assert.equal(payload.debug.cloudflare_model, '@cf/moonshotai/kimi-k2.6');
 });
 
 test('allows X-Debug-AI-Response in CORS preflight requests', async () => {

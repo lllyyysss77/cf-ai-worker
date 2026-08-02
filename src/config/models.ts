@@ -33,11 +33,17 @@ export interface ModelRegistry {
 export const DEFAULT_MODEL_CONFIG: AiGatewayConfig = {
 	models: [
 		{
-			requestModelId: 'kimi-k2.5',
-			cloudflareModelId: '@cf/moonshotai/kimi-k2.5',
+			requestModelId: 'kimi-k2.6',
+			cloudflareModelId: '@cf/moonshotai/kimi-k2.6',
 			messageNative: true,
 			listed: true,
 			ownedBy: 'openai',
+		},
+		{
+			requestModelId: 'kimi-k2.5',
+			cloudflareModelId: '@cf/moonshotai/kimi-k2.6',
+			messageNative: true,
+			listed: false,
 		},
 		{
 			requestModelId: 'glm-4.7-flash',
@@ -58,6 +64,13 @@ export const DEFAULT_MODEL_CONFIG: AiGatewayConfig = {
 			messageNative: false,
 			listed: true,
 			ownedBy: 'deepseek-ai',
+		},
+		{
+			requestModelId: 'gpt-oss-120b',
+			cloudflareModelId: '@cf/openai/gpt-oss-120b',
+			messageNative: true,
+			listed: true,
+			ownedBy: 'openai',
 		},
 	],
 };
